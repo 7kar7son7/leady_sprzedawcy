@@ -57,30 +57,31 @@ python main.py --query "wiertarka" --pages 3 --limit 50
 
 Kolejne runy zwykle bez Captchy (cookie w profilu). Znani sprzedawcy z CSV są pomijani.
 
-## Hosting / Docker
+## Panel WWW (hosting)
 
-Kontener **nie ma X11** (`Missing X server or $DISPLAY`). Bot wykrywa to i wymusza **headless** + Chromium Playwright (bez systemowego Chrome).
+502 Bad Gateway = nginx nie ma działającego **serwera HTTP**. Sam `python main.py` to CLI, nie panel.
 
-W `config.yaml` na hostingu:
-
-```yaml
-headless: true
-use_system_chrome: false
-```
+Na serwerze proces musi być:
 
 ```bash
-git clone https://github.com/7kar7son7/leady_sprzedawcy.git
-cd leady_sprzedawcy
-docker build -t leady-sprzedawcy .
-docker run --rm -v "$PWD/data:/app/data" leady-sprzedawcy \
-  python main.py --query "wiertarka" --pages 2 --limit 50
+uvicorn webapp:app --host 0.0.0.0 --port 8000
+# albo:
+bash start.sh
+# albo PM2:
+pm2 start ecosystem.config.cjs
 ```
 
-Albo bez Dockera: `pip install -r requirements.txt && playwright install --with-deps chromium`.
+Panel: lista leadów, pobieranie CSV, przycisk uruchomienia bota.
 
-**Uwaga:** Allegro (DataDome) może w headless pokazać Captchę → 0 sprzedawców. Wtedy trzeba VPS z VNC/`xvfb` albo odpalać lokalnie z oknem (`--headed`).
+```bash
+git pull
+pip install -r requirements.txt
+playwright install --with-deps chromium
+pm2 restart leady-sprzedawcy
+# albo rebuild Docker z nowym CMD (uvicorn)
+```
 
-Nie commituj `browser_profile/` ani `data/*.csv`.
+Healthcheck: `GET /health`
 
 ## Uwagi
 

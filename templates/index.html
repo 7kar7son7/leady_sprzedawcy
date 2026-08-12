@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Allegro – leady sprzedawców</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a222c;
+      --text: #e7ecf1;
+      --muted: #8b9aab;
+      --accent: #3d9cf0;
+      --ok: #3ecf8e;
+      --bad: #f07178;
+      --line: #2a3542;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    main { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+    h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+    .sub { color: var(--muted); margin-bottom: 1.25rem; }
+    .cards { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.9rem 1.1rem;
+      min-width: 140px;
+    }
+    .card b { display: block; font-size: 1.5rem; }
+    .card span { color: var(--muted); font-size: 0.85rem; }
+    form.run {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 1rem;
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: 2fr 1fr 1fr auto;
+      align-items: end;
+      margin-bottom: 1.25rem;
+    }
+    @media (max-width: 800px) {
+      form.run { grid-template-columns: 1fr 1fr; }
+    }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
+    input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 0.55rem 0.7rem;
+    }
+    button, .btn {
+      background: var(--accent);
+      color: #041018;
+      border: 0;
+      border-radius: 8px;
+      padding: 0.6rem 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .row-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .status {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.8rem 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+    .status.running { border-color: var(--accent); }
+    .status.err { border-color: var(--bad); }
+    .log {
+      max-height: 160px;
+      overflow: auto;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.78rem;
+      color: var(--muted);
+      white-space: pre-wrap;
+      margin-top: 0.5rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      background: var(--panel);
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+    }
+    th, td { padding: 0.55rem 0.65rem; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    a { color: var(--accent); }
+    .phone { color: var(--ok); font-weight: 600; }
+    .empty { color: var(--muted); padding: 1.5rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Allegro – leady sprzedawców</h1>
+    <p class="sub">Publiczne telefony / maile z sekcji o sprzedającym. CSV: <code>data/sellers.csv</code></p>
+
+    <div class="cards">
+      <div class="card"><b>{{ stats.total }}</b><span>łącznie w pliku</span></div>
+      <div class="card"><b>{{ stats.with_phone }}</b><span>z telefonem</span></div>
+      <div class="card"><b>{% if job.running %}RUN{% else %}IDLE{% endif %}</b><span>status bota</span></div>
+    </div>
+
+    <form class="run" method="post" action="/run">
+      <div>
+        <label for="query">Fraza Allegro</label>
+        <input id="query" name="query" value="{{ default_query }}" required {% if job.running %}disabled{% endif %} />
+      </div>
+      <div>
+        <label for="pages">Strony</label>
+        <input id="pages" name="pages" type="number" min="1" max="20" value="2" {% if job.running %}disabled{% endif %} />
+      </div>
+      <div>
+        <label for="limit">Limit sprzedawców</label>
+        <input id="limit" name="limit" type="number" min="1" max="500" value="30" {% if job.running %}disabled{% endif %} />
+      </div>
+      <button type="submit" {% if job.running %}disabled{% endif %}>Uruchom</button>
+    </form>
+
+    <div class="row-actions">
+      {% if csv_exists %}
+      <a class="btn" href="/download.csv">Pobierz CSV</a>
+      {% endif %}
+      <a class="btn" href="/" style="background:#2a3542;color:var(--text)">Odśwież</a>
+    </div>
+
+    <div class="status {% if job.running %}running{% endif %} {% if job.error %}err{% endif %}">
+      {% if job.running %}
+        Bot działa… (strona odświeży się sama)
+      {% elif job.error %}
+        Ostatni błąd: {{ job.error }}
+      {% elif job.result %}
+        Ostatni run: zapisano {{ job.result.saved }}, z telefonem {{ job.result.with_phone }}
+      {% else %}
+        Bot bezczynny. Uruchom scrapowanie formularzem powyżej.
+      {% endif %}
+      {% if job.log %}
+      <div class="log">{{ job.log|join('\n') }}</div>
+      {% endif %}
+    </div>
+
+    {% if rows %}
+    <table>
+      <thead>
+        <tr>
+          <th>Login</th>
+          <th>Telefon</th>
+          <th>Email</th>
+          <th>Firma</th>
+          <th>NIP</th>
+          <th>Oferta</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td><a href="{{ r.seller_url }}" target="_blank" rel="noopener">{{ r.login }}</a></td>
+          <td class="phone">{{ r.phone or '—' }}</td>
+          <td>{{ r.email or '—' }}</td>
+          <td>{{ r.company_name or '—' }}</td>
+          <td>{{ r.nip or '—' }}</td>
+          <td>{% if r.offer_url %}<a href="{{ r.offer_url }}" target="_blank" rel="noopener">oferta</a>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">Brak leadów. Odpal scrapowanie albo wrzuć CSV do <code>data/sellers.csv</code>.</div>
+    {% endif %}
+  </main>
+  {% if job.running %}
+  <script>setTimeout(function(){ location.reload(); }, 4000);</script>
+  {% endif %}
+</body>
+</html>
