@@ -22,4 +22,4 @@ RUN mkdir -p data browser_profile templates \
 EXPOSE 8000
 
 # Panel WWW (nginx → ten port). Nie uruchamiaj samego CLI jako procesu HTTP.
-CMD ["sh", "-c", "uvicorn webapp:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
