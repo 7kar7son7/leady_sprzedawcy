@@ -57,20 +57,30 @@ python main.py --query "wiertarka" --pages 3 --limit 50
 
 Kolejne runy zwykle bez Captchy (cookie w profilu). Znani sprzedawcy z CSV są pomijani.
 
-## Hosting / VPS
+## Hosting / Docker
 
-- Najpewniej działa z **GUI / VNC** i `headless: false` (Captcha).
-- Czysty headless na serwerze Allegro często blokuje – wtedy ustaw w `config.yaml`:
-  - `headless: false`
-  - `use_system_chrome: true`
-  - i użyj pulpitu zdalnego (VNC/RDP) przy pierwszym Captchy.
-- Nie commituj `browser_profile/` ani `data/*.csv` (są w `.gitignore`).
+Kontener **nie ma X11** (`Missing X server or $DISPLAY`). Bot wykrywa to i wymusza **headless** + Chromium Playwright (bez systemowego Chrome).
 
-Przykład cron (Linux, po jednorazowym Captchy w sesji z GUI):
+W `config.yaml` na hostingu:
+
+```yaml
+headless: true
+use_system_chrome: false
+```
 
 ```bash
-cd /opt/ledy_sprzedawcy && .venv/bin/python main.py --query "wiertarka" --pages 2 --limit 100
+git clone https://github.com/7kar7son7/leady_sprzedawcy.git
+cd leady_sprzedawcy
+docker build -t leady-sprzedawcy .
+docker run --rm -v "$PWD/data:/app/data" leady-sprzedawcy \
+  python main.py --query "wiertarka" --pages 2 --limit 50
 ```
+
+Albo bez Dockera: `pip install -r requirements.txt && playwright install --with-deps chromium`.
+
+**Uwaga:** Allegro (DataDome) może w headless pokazać Captchę → 0 sprzedawców. Wtedy trzeba VPS z VNC/`xvfb` albo odpalać lokalnie z oknem (`--headed`).
+
+Nie commituj `browser_profile/` ani `data/*.csv`.
 
 ## Uwagi
 

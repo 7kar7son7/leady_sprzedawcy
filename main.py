@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from allegro_bot.browser import open_context
+from allegro_bot.browser import has_display, open_context, running_in_container
 from allegro_bot.scraper import AllegroSellerBot
 from allegro_bot.storage import Storage
 
@@ -36,7 +36,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--query", "-q", type=str, help="Fraza wyszukiwania, np. wiertarka")
     p.add_argument("--pages", type=int, help="Ile stron listingu")
     p.add_argument("--limit", type=int, help="Max unikalnych sprzedawców")
-    p.add_argument("--headless", action="store_true", help="Bez okna (często blokowane Captchą)")
+    p.add_argument(
+        "--headless",
+        action="store_true",
+        default=None,
+        help="Bez okna (domyślne na Docker/VPS bez DISPLAY)",
+    )
+    p.add_argument(
+        "--headed",
+        action="store_true",
+        help="Wymuś okno (wymaga GUI / Xvfb)",
+    )
     p.add_argument("--no-chrome", action="store_true", help="Nie używaj systemowego Chrome")
     return p
 
@@ -52,8 +62,20 @@ async def run(args: argparse.Namespace) -> int:
     max_sellers = int(args.limit or cfg.get("max_sellers") or 100)
     delay_min = float(cfg.get("delay_min_sec") or 1.5)
     delay_max = float(cfg.get("delay_max_sec") or 3.5)
-    headless = bool(args.headless or cfg.get("headless") or False)
+
+    # Headless: CLI > config > auto (brak DISPLAY / kontener)
+    if args.headed:
+        headless = False
+    elif args.headless is True:
+        headless = True
+    elif "headless" in cfg and cfg.get("headless") is not None:
+        headless = bool(cfg.get("headless"))
+    else:
+        headless = not has_display() or running_in_container()
+
     use_chrome = not args.no_chrome and bool(cfg.get("use_system_chrome", True))
+    if running_in_container() or not has_display():
+        use_chrome = False
 
     profile_dir = ROOT / str(cfg.get("browser_profile_dir") or "browser_profile")
     csv_path = ROOT / str(cfg.get("output_csv") or "data/sellers.csv")
@@ -67,19 +89,21 @@ async def run(args: argparse.Namespace) -> int:
         max_sellers=max_sellers,
     )
 
-    print(f"=== Allegro seller bot ===")
+    print("=== Allegro seller bot ===")
     print(f"query={query!r} pages={max_pages} limit={max_sellers}")
     print(f"profil={profile_dir}")
     print(f"wynik CSV={csv_path}")
     if headless:
-        print("[!] headless – Allegro często pokazuje Captchę. Lepiej bez --headless.")
+        print("[!] headless – na hostingu OK; Captcha Allegro może zablokować listing.")
 
-    pw, context = await open_context(
-        profile_dir=profile_dir,
-        headless=headless,
-        use_system_chrome=use_chrome,
-    )
+    pw = None
+    context = None
     try:
+        pw, context = await open_context(
+            profile_dir=profile_dir,
+            headless=headless,
+            use_system_chrome=use_chrome,
+        )
         page = context.pages[0] if context.pages else await context.new_page()
         candidates = await bot.collect_from_listing(
             page, query, max_pages=max_pages, known_logins=known
@@ -122,14 +146,33 @@ async def run(args: argparse.Namespace) -> int:
         )
         print(f"=== Koniec: zapisano {saved}, z telefonem {with_phone} ===")
         return 0
+    except Exception as e:
+        print(f"BŁĄD FATALNY: {type(e).__name__}: {e}", flush=True)
+        return 1
     finally:
-        await context.close()
-        await pw.stop()
+        if context is not None:
+            try:
+                await context.close()
+            except Exception:
+                pass
+        if pw is not None:
+            try:
+                await pw.stop()
+            except Exception:
+                pass
 
 
 def main() -> None:
     args = build_parser().parse_args()
-    raise SystemExit(asyncio.run(run(args)))
+    # Na hostingu czasem zostaje uszkodzony event loop po crashu Chrome
+    try:
+        raise SystemExit(asyncio.run(run(args)))
+    except RuntimeError as e:
+        if "Event loop is closed" in str(e):
+            print("BŁĄD: Event loop is closed (zwykle po padzie Chrome bez DISPLAY).")
+            print("Zrób git pull – bot wymusza headless w kontenerze.")
+            raise SystemExit(1) from e
+        raise
 
 
 if __name__ == "__main__":
