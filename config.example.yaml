@@ -1,5 +1,5 @@
 # Allegro bot – konfiguracja pod hosting / Docker
-query: "wiertarka"
+query: ""
 max_pages: 3
 max_sellers: 100
 delay_min_sec: 1.5

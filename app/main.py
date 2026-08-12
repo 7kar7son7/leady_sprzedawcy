@@ -201,7 +201,7 @@ async def index(request: Request) -> HTMLResponse:
             "rows": rows,
             "stats": stats,
             "job": _job,
-            "default_query": cfg.get("query") or "wiertarka",
+            "default_query": (cfg.get("query") or "").strip(),
             "csv_exists": CSV_PATH.exists(),
         },
     )

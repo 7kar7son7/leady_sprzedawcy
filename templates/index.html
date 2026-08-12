@@ -111,7 +111,12 @@
 <body>
   <main>
     <h1>Allegro – leady sprzedawców</h1>
-    <p class="sub">Publiczne telefony / maile z sekcji o sprzedającym. CSV: <code>data/sellers.csv</code></p>
+    <p class="sub">
+      Allegro nie ma listy „wszyscy sprzedawcy”. Podajesz <strong>niszę / kategorię / produkt</strong>
+      (np. <em>domki letniskowe</em>, <em>kosmetyki</em>) – bot zbiera oferty i wyciąga
+      <strong>unikalnych sprzedawców</strong> + publiczny telefon/mail z „O sprzedającym”.
+      CSV: <code>data/sellers.csv</code>
+    </p>
 
     <div class="cards">
       <div class="card"><b>{{ stats.total }}</b><span>łącznie w pliku</span></div>
@@ -121,18 +126,20 @@
 
     <form class="run" method="post" action="/run">
       <div>
-        <label for="query">Fraza Allegro</label>
-        <input id="query" name="query" value="{{ default_query }}" required {% if job.running %}disabled{% endif %} />
+        <label for="query">Nisza / fraza na Allegro (żeby znaleźć sprzedawców)</label>
+        <input id="query" name="query" value="{{ default_query }}"
+               placeholder="np. kosmetyki naturalne, opony zimowe, meble ogrodowe"
+               required {% if job.running %}disabled{% endif %} />
       </div>
       <div>
-        <label for="pages">Strony</label>
+        <label for="pages">Strony ofert</label>
         <input id="pages" name="pages" type="number" min="1" max="20" value="2" {% if job.running %}disabled{% endif %} />
       </div>
       <div>
-        <label for="limit">Limit sprzedawców</label>
+        <label for="limit">Max sprzedawców</label>
         <input id="limit" name="limit" type="number" min="1" max="500" value="30" {% if job.running %}disabled{% endif %} />
       </div>
-      <button type="submit" {% if job.running %}disabled{% endif %}>Uruchom</button>
+      <button type="submit" {% if job.running %}disabled{% endif %}>Zbierz sprzedawców</button>
     </form>
 
     <div class="row-actions">
