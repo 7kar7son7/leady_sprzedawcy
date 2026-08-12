@@ -147,17 +147,28 @@
       <a class="btn" href="/download.csv">Pobierz CSV</a>
       {% endif %}
       <a class="btn" href="/" style="background:#2a3542;color:var(--text)">Odśwież</a>
+      {% if job.running %}
+      <form method="post" action="/stop" style="display:inline;margin:0">
+        <button type="submit" style="background:var(--bad);color:#fff">Stop (odblokuj)</button>
+      </form>
+      {% endif %}
     </div>
 
     <div class="status {% if job.running %}running{% endif %} {% if job.error %}err{% endif %}">
       {% if job.running %}
-        Bot działa… (strona odświeży się sama)
+        Bot działa…
+        {% if job.query %}<strong>fraza:</strong> {{ job.query }} · {% endif %}
+        {% if job_age_sec %}już {{ job_age_sec }}s{% endif %}
+        (log odświeża się sam)
       {% elif job.error %}
-        Ostatni błąd: {{ job.error }}
+        Błąd / stop: {{ job.error }}
       {% elif job.result %}
-        Ostatni run: zapisano {{ job.result.saved }}, z telefonem {{ job.result.with_phone }}
+        Ostatni run{% if job.query %} ({{ job.query }}){% endif %}:
+        kandydaci {{ job.result.candidates or '?' }},
+        zapisano {{ job.result.saved }},
+        z telefonem {{ job.result.with_phone }}
       {% else %}
-        Bot bezczynny. Uruchom scrapowanie formularzem powyżej.
+        Bot bezczynny. Wpisz niszę i kliknij „Zbierz sprzedawców”.
       {% endif %}
       {% if job.log %}
       <div class="log">{{ job.log|join('\n') }}</div>

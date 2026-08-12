@@ -98,15 +98,20 @@ async def run(args: argparse.Namespace) -> int:
 
     pw = None
     context = None
+    browser = None
     try:
-        pw, context = await open_context(
+        pw, context, browser = await open_context(
             profile_dir=profile_dir,
             headless=headless,
             use_system_chrome=use_chrome,
         )
         page = context.pages[0] if context.pages else await context.new_page()
         candidates = await bot.collect_from_listing(
-            page, query, max_pages=max_pages, known_logins=known
+            page,
+            query,
+            max_pages=max_pages,
+            known_logins=known,
+            headless_mode=headless,
         )
         print(f"[+] Do sprawdzenia: {len(candidates)} sprzedawców")
 
@@ -153,6 +158,11 @@ async def run(args: argparse.Namespace) -> int:
         if context is not None:
             try:
                 await context.close()
+            except Exception:
+                pass
+        if browser is not None:
+            try:
+                await browser.close()
             except Exception:
                 pass
         if pw is not None:

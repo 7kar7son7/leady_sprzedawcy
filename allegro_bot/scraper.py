@@ -41,25 +41,42 @@ class AllegroSellerBot:
         query: str,
         max_pages: int,
         known_logins: set[str],
+        *,
+        headless_mode: bool = False,
+        log_fn=None,
     ) -> list[dict]:
         """Zwraca listę {login, seller_url, offer_url} z listingu."""
         found: list[dict] = []
         seen: set[str] = set()
+        wait1 = 60_000 if headless_mode else 180_000
+        wait2 = 30_000 if headless_mode else 300_000
+
+        def log(msg: str) -> None:
+            if log_fn:
+                log_fn(msg)
+            else:
+                print(msg)
 
         for page_no in range(1, max_pages + 1):
             url = self.listing_url(query, page_no)
+            log(f"listing strona {page_no}: {url}")
             await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
             await dismiss_cookie_banner(page)
-            ok = await wait_until_listing_ready(page, timeout_ms=180_000)
+            ok = await wait_until_listing_ready(page, timeout_ms=wait1)
             if not ok:
-                # daj czas na ręczne przejście Captchy w oknie przeglądarki
-                print(
-                    f"[!] Strona {page_no}: Captcha / brak ofert. "
-                    "Przejdź Captchę w oknie Chrome i poczekaj…"
+                log(
+                    f"[!] Strona {page_no}: Captcha / brak ofert "
+                    f"(czekam jeszcze {wait2 // 1000}s)…"
                 )
-                ok = await wait_until_listing_ready(page, timeout_ms=300_000)
+                ok = await wait_until_listing_ready(page, timeout_ms=wait2)
                 if not ok:
-                    print(f"[!] Pomijam stronę {page_no} – nadal brak ofert.")
+                    # diagnostyka
+                    title = await page.title()
+                    html_len = len(await page.content())
+                    log(
+                        f"[!] Pomijam stronę {page_no} – title={title!r} html={html_len}. "
+                        "Na hostingu często DataDome blokuje headless."
+                    )
                     break
 
             html = await page.content()
@@ -83,15 +100,15 @@ class AllegroSellerBot:
                 )
                 added += 1
                 if len(found) >= self.max_sellers:
-                    print(
+                    log(
                         f"[+] Listing strona {page_no}: +{added} "
                         f"sprzedawców (łącznie {len(found)})"
                     )
                     return found
 
-            print(f"[+] Listing strona {page_no}: +{added} sprzedawców (łącznie {len(found)})")
+            log(f"[+] Listing strona {page_no}: +{added} sprzedawców (łącznie {len(found)})")
             if added == 0:
-                print("[!] Brak sprzedawców w StoreState – Captcha albo zmiana HTML.")
+                log("[!] Brak sprzedawców w StoreState – Captcha albo zmiana HTML.")
             await self.pause()
 
         return found
