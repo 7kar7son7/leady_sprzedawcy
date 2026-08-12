@@ -195,9 +195,9 @@ async def index(request: Request) -> HTMLResponse:
     }
     cfg = load_config()
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
-            "request": request,
             "rows": rows,
             "stats": stats,
             "job": _job,
