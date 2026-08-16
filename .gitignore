@@ -11,3 +11,4 @@ _probe/
 _probe_*.py
 *.log
 config.yaml
+.env

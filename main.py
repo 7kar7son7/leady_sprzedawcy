@@ -6,10 +6,12 @@ import sys
 from pathlib import Path
 
 import yaml
+from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+load_dotenv(ROOT / ".env")
 
 from allegro_bot.browser import has_display, open_context, running_in_container
 from allegro_bot.scraper import AllegroSellerBot
@@ -89,10 +91,16 @@ async def run(args: argparse.Namespace) -> int:
         max_sellers=max_sellers,
     )
 
+    from allegro_bot import leads_db
+
     print("=== Allegro seller bot ===")
     print(f"query={query!r} pages={max_pages} limit={max_sellers}")
     print(f"profil={profile_dir}")
     print(f"wynik CSV={csv_path}")
+    if leads_db.configured():
+        print("zapis do panelu WWW: PostgreSQL TAK")
+    else:
+        print("[!] brak DATABASE_URL – panel https://leady-sprzedawcy.devstudioit.app/ nic nie zobaczy")
     if headless:
         print("[!] headless – na hostingu OK; Captcha Allegro może zablokować listing.")
 

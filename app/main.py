@@ -2,27 +2,43 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import io
+import os
+import secrets
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
+
+from allegro_bot import leads_db
+from allegro_bot.statuses import DEFAULT_STATUS, STATUS_LABELS, STATUSES
 
 ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT / ".env")
+
 DATA = ROOT / "data"
 CSV_PATH = DATA / "sellers.csv"
 STATE_PATH = DATA / "last_run.json"
 CONFIG_PATH = ROOT / "config.yaml"
 EXAMPLE_CONFIG = ROOT / "config.example.yaml"
 
-# job dłuższy niż to → uznaj za zawieszony
 STUCK_AFTER_SEC = 10 * 60
+OPEN_PATHS = {"/login", "/health"}
+
+PANEL_USER = (os.environ.get("PANEL_USER") or "admin").strip()
+PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD") or ""
+SESSION_SECRET = (os.environ.get("SESSION_SECRET") or "").strip() or secrets.token_urlsafe(32)
 
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
+templates.env.globals["status_labels"] = STATUS_LABELS
+templates.env.globals["statuses"] = STATUSES
 
 app = FastAPI(title="Allegro Seller Leads")
 
@@ -54,20 +70,6 @@ def load_config() -> dict:
         return yaml.safe_load(f) or {}
 
 
-def read_leads(limit: int = 500) -> list[dict]:
-    if not CSV_PATH.exists():
-        return []
-    with CSV_PATH.open("r", encoding="utf-8-sig", newline="") as f:
-        rows = list(csv.DictReader(f))
-    rows.reverse()
-    return rows[:limit]
-
-
-def lead_stats(rows: list[dict]) -> dict:
-    with_phone = sum(1 for r in rows if (r.get("phone") or "").strip())
-    return {"total": len(rows), "with_phone": with_phone}
-
-
 def _job_age_sec() -> float | None:
     started = _job.get("started_at")
     if not started:
@@ -82,7 +84,6 @@ def _job_age_sec() -> float | None:
 
 
 def clear_stuck_job_if_needed() -> None:
-    """Odblokuj panel gdy job wisi w RUN bez końca (np. hang Chromium)."""
     with _job_lock:
         if not _job.get("running"):
             return
@@ -125,6 +126,10 @@ def _run_bot_sync(query: str, pages: int, limit: int) -> None:
         pw = context = browser = None
         try:
             _log(f"start: query={query!r} pages={pages} limit={limit}")
+            if leads_db.configured():
+                _log("zapis: PostgreSQL (panel WWW) + CSV lokalnie")
+            else:
+                _log("UWAGA: brak DATABASE_URL – tylko CSV, panel WWW nic nie zobaczy")
             _log("uruchamiam Chromium (max 75s)…")
             try:
                 pw, context, browser = await asyncio.wait_for(
@@ -163,7 +168,7 @@ def _run_bot_sync(query: str, pages: int, limit: int) -> None:
             if not candidates:
                 _log(
                     "0 sprzedawców – często Captcha DataDome na hostingu (headless). "
-                    "Spróbuj lokalnie z oknem albo inną frazę."
+                    "Odpal bota lokalnie: python main.py --query \"…\""
                 )
 
             saved = 0
@@ -275,23 +280,108 @@ def stop_job() -> None:
             ]
 
 
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    path = request.url.path
+    if path in OPEN_PATHS:
+        return await call_next(request)
+    if request.session.get("user"):
+        return await call_next(request)
+    if path.startswith("/api/"):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return RedirectResponse("/login", status_code=303)
+
+
+# SessionMiddleware na zewnątrz, żeby request.session było już w require_login
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SESSION_SECRET,
+    same_site="lax",
+    https_only=False,
+    max_age=60 * 60 * 24 * 14,
+)
+
+
 @app.get("/health")
 async def health() -> dict:
-    return {"ok": True, "service": "leady-sprzedawcy"}
+    db_ok = False
+    db_err = None
+    if leads_db.configured():
+        try:
+            leads_db.init_schema()
+            db_ok = True
+        except Exception as e:
+            db_err = str(e)
+    return {"ok": True, "service": "leady-sprzedawcy", "db": db_ok, "db_error": db_err}
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request) -> HTMLResponse:
+    if request.session.get("user"):
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse(request, "login.html", {"error": None})
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login_submit(
+    request: Request,
+    username: str = Form(""),
+    password: str = Form(""),
+) -> HTMLResponse:
+    if not PANEL_PASSWORD:
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"error": "Brak PANEL_PASSWORD w środowisku serwera."},
+            status_code=500,
+        )
+    def _eq(a: str, b: str) -> bool:
+        if len(a) != len(b):
+            return False
+        return secrets.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+
+    ok_user = _eq(username, PANEL_USER)
+    ok_pass = _eq(password, PANEL_PASSWORD)
+    if not (ok_user and ok_pass):
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"error": "Zły login lub hasło."},
+            status_code=401,
+        )
+    request.session["user"] = PANEL_USER
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login", status_code=303)
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request) -> HTMLResponse:
+async def index(request: Request, status: str = "") -> HTMLResponse:
     clear_stuck_job_if_needed()
-    all_rows: list[dict] = []
-    if CSV_PATH.exists():
-        with CSV_PATH.open("r", encoding="utf-8-sig", newline="") as f:
-            all_rows = list(csv.DictReader(f))
-    rows = list(reversed(all_rows))[:300]
+    db_error = None
+    rows: list[dict] = []
     stats = {
-        "total": len(all_rows),
-        "with_phone": sum(1 for r in all_rows if (r.get("phone") or "").strip()),
+        "total": 0,
+        "with_phone": 0,
+        "with_email": 0,
+        "by_status": {},
+        "contacted": 0,
+        "won": 0,
+        "lost": 0,
+        "conversion_pct": 0,
     }
+    if leads_db.configured():
+        try:
+            stats = leads_db.stats()
+            rows = leads_db.list_leads(status=status or None, limit=500)
+        except Exception as e:
+            db_error = str(e)
+    else:
+        db_error = "Brak DATABASE_URL – panel nie ma bazy."
     cfg = load_config()
     age = _job_age_sec()
     return templates.TemplateResponse(
@@ -303,7 +393,9 @@ async def index(request: Request) -> HTMLResponse:
             "job": _job,
             "job_age_sec": int(age) if age is not None else None,
             "default_query": (cfg.get("query") or "").strip(),
-            "csv_exists": CSV_PATH.exists(),
+            "filter_status": status,
+            "db_error": db_error,
+            "user": request.session.get("user"),
         },
     )
 
@@ -311,23 +403,79 @@ async def index(request: Request) -> HTMLResponse:
 @app.get("/api/status")
 async def api_status() -> JSONResponse:
     clear_stuck_job_if_needed()
+    lead_stats = {"total": 0, "with_phone": 0}
+    if leads_db.configured():
+        try:
+            lead_stats = leads_db.stats()
+        except Exception:
+            pass
     return JSONResponse(
         {
             "job": _job,
             "job_age_sec": _job_age_sec(),
-            "stats": lead_stats(read_leads(10_000)),
+            "stats": lead_stats,
         }
     )
 
 
+@app.post("/api/lead/status")
+async def api_lead_status(request: Request) -> JSONResponse:
+    body = await request.json()
+    login = str(body.get("login") or "").strip()
+    status = str(body.get("status") or "").strip()
+    note = body.get("note")
+    try:
+        ok = leads_db.update_status(
+            login,
+            status,
+            str(note) if note is not None else None,
+        )
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    if not ok:
+        return JSONResponse({"ok": False, "error": "nie znaleziono leada"}, status_code=404)
+    return JSONResponse({"ok": True, "login": login, "status": status})
+
+
+@app.post("/api/lead/note")
+async def api_lead_note(request: Request) -> JSONResponse:
+    body = await request.json()
+    login = str(body.get("login") or "").strip()
+    note = str(body.get("note") or "")
+    ok = leads_db.update_note(login, note)
+    if not ok:
+        return JSONResponse({"ok": False, "error": "nie znaleziono leada"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
 @app.get("/download.csv")
 async def download_csv():
-    if not CSV_PATH.exists():
-        return HTMLResponse("Brak pliku sellers.csv – najpierw odpal scrapowanie.", status_code=404)
-    return FileResponse(
-        CSV_PATH,
+    if not leads_db.configured():
+        return HTMLResponse("Brak bazy.", status_code=404)
+    rows = leads_db.list_leads(limit=50_000)
+    fields = [
+        "login",
+        "company_name",
+        "phone",
+        "email",
+        "nip",
+        "address",
+        "status",
+        "status_note",
+        "seller_url",
+        "offer_url",
+        "query",
+        "created_at",
+    ]
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+    w.writeheader()
+    for row in rows:
+        w.writerow(row)
+    return Response(
+        content=buf.getvalue().encode("utf-8-sig"),
         media_type="text/csv",
-        filename="sellers.csv",
+        headers={"Content-Disposition": 'attachment; filename="sellers.csv"'},
     )
 
 
@@ -358,6 +506,11 @@ def create_app() -> FastAPI:
     DATA.mkdir(parents=True, exist_ok=True)
     if not CONFIG_PATH.exists() and EXAMPLE_CONFIG.exists():
         CONFIG_PATH.write_text(EXAMPLE_CONFIG.read_text(encoding="utf-8"), encoding="utf-8")
+    if leads_db.configured():
+        try:
+            leads_db.init_schema()
+        except Exception as e:
+            print(f"[!] PostgreSQL init: {e}", flush=True)
     return app
 
 

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Logowanie – leady sprzedawców</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a222c;
+      --text: #e7ecf1;
+      --muted: #8b9aab;
+      --accent: #3d9cf0;
+      --bad: #f07178;
+      --line: #2a3542;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    form {
+      width: min(380px, 92vw);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1.4rem 1.3rem 1.2rem;
+    }
+    h1 { font-size: 1.15rem; margin: 0 0 0.35rem; }
+    p { color: var(--muted); margin: 0 0 1rem; font-size: 0.9rem; }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.7rem 0 0.25rem; }
+    input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
+    }
+    button {
+      margin-top: 1rem;
+      width: 100%;
+      background: var(--accent);
+      color: #041018;
+      border: 0;
+      border-radius: 8px;
+      padding: 0.7rem 1rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .err {
+      background: #2a1518;
+      border: 1px solid var(--bad);
+      color: #ffc9cc;
+      border-radius: 8px;
+      padding: 0.55rem 0.7rem;
+      font-size: 0.88rem;
+      margin-bottom: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+  <form method="post" action="/login">
+    <h1>Leady sprzedawców</h1>
+    <p>Panel prywatny – tylko dla Ciebie.</p>
+    {% if error %}
+    <div class="err">{{ error }}</div>
+    {% endif %}
+    <label for="username">Login</label>
+    <input id="username" name="username" autocomplete="username" required />
+    <label for="password">Hasło</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required />
+    <button type="submit">Zaloguj</button>
+  </form>
+</body>
+</html>

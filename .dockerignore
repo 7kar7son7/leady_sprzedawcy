@@ -1,0 +1,8 @@
+.venv
+.env
+__pycache__
+*.pyc
+browser_profile
+data/*.csv
+data/*.sqlite
+.git

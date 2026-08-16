@@ -13,6 +13,7 @@
       --accent: #3d9cf0;
       --ok: #3ecf8e;
       --bad: #f07178;
+      --warn: #e6c36a;
       --line: #2a3542;
     }
     * { box-sizing: border-box; }
@@ -23,19 +24,23 @@
       color: var(--text);
       line-height: 1.45;
     }
-    main { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+    main { max-width: 1280px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
     h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
     .sub { color: var(--muted); margin-bottom: 1.25rem; }
+    .topbar { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+    .logout { background: transparent; color: var(--muted); border: 1px solid var(--line); }
     .cards { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
     .card {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 10px;
       padding: 0.9rem 1.1rem;
-      min-width: 140px;
+      min-width: 120px;
     }
     .card b { display: block; font-size: 1.5rem; }
     .card span { color: var(--muted); font-size: 0.85rem; }
+    .card.ok b { color: var(--ok); }
+    .card.bad b { color: var(--bad); }
     form.run {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -51,13 +56,14 @@
       form.run { grid-template-columns: 1fr 1fr; }
     }
     label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
-    input {
+    input, select, textarea {
       width: 100%;
       background: var(--bg);
       border: 1px solid var(--line);
       color: var(--text);
       border-radius: 8px;
-      padding: 0.55rem 0.7rem;
+      padding: 0.5rem 0.65rem;
+      font: inherit;
     }
     button, .btn {
       background: var(--accent);
@@ -71,7 +77,16 @@
       display: inline-block;
     }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .row-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .row-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
+    .filters a {
+      color: var(--muted);
+      text-decoration: none;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.28rem 0.7rem;
+      font-size: 0.82rem;
+    }
+    .filters a.on { background: var(--accent); color: #041018; border-color: var(--accent); }
     .status {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -94,33 +109,61 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       background: var(--panel);
       border-radius: 10px;
       overflow: hidden;
       border: 1px solid var(--line);
     }
-    th, td { padding: 0.55rem 0.65rem; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
-    th { color: var(--muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; }
+    th, td { padding: 0.5rem 0.55rem; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; }
     tr:last-child td { border-bottom: 0; }
     a { color: var(--accent); }
-    .phone { color: var(--ok); font-weight: 600; }
+    .phone { color: var(--ok); font-weight: 600; white-space: nowrap; }
     .empty { color: var(--muted); padding: 1.5rem; text-align: center; }
+    .note { min-width: 140px; font-size: 0.82rem; }
+    select.status-sel { min-width: 150px; }
+    .st-nowy { color: var(--muted); }
+    .st-zadzwoniono { color: var(--accent); }
+    .st-przemysli { color: var(--warn); }
+    .st-sprawdzi { color: var(--accent); }
+    .st-nie_odbiera { color: var(--muted); }
+    .st-nie_chce { color: var(--bad); }
+    .st-skorzystal { color: var(--ok); }
+    .hint { color: var(--muted); font-size: 0.8rem; }
+    .query { color: var(--muted); font-size: 0.78rem; }
   </style>
 </head>
 <body>
   <main>
-    <h1>Allegro – leady sprzedawców</h1>
-    <p class="sub">
-      Allegro nie ma listy „wszyscy sprzedawcy”. Podajesz <strong>niszę / kategorię / produkt</strong>
-      (np. <em>domki letniskowe</em>, <em>kosmetyki</em>) – bot zbiera oferty i wyciąga
-      <strong>unikalnych sprzedawców</strong> + publiczny telefon/mail z „O sprzedającym”.
-      CSV: <code>data/sellers.csv</code>
-    </p>
+    <div class="topbar">
+      <div>
+        <h1>Allegro – leady sprzedawców</h1>
+        <p class="sub">
+          Bot lokalny zapisuje kontakty do bazy. Tu ustawiasz status po rozmowie
+          i patrzysz na statystyki. Panel tylko dla zalogowanego.
+        </p>
+      </div>
+      <form method="post" action="/logout" style="margin:0">
+        <button class="logout" type="submit">Wyloguj ({{ user }})</button>
+      </form>
+    </div>
+
+    {% if db_error %}
+    <div class="status err">Baza: {{ db_error }}</div>
+    {% endif %}
 
     <div class="cards">
-      <div class="card"><b>{{ stats.total }}</b><span>łącznie w pliku</span></div>
+      <div class="card"><b>{{ stats.total }}</b><span>łącznie leadów</span></div>
       <div class="card"><b>{{ stats.with_phone }}</b><span>z telefonem</span></div>
+      <div class="card"><b>{{ stats.with_email }}</b><span>z e-mailem</span></div>
+      <div class="card"><b>{{ stats.by_status.get('nowy', 0) }}</b><span>nowe</span></div>
+      <div class="card"><b>{{ stats.by_status.get('zadzwoniono', 0) }}</b><span>zadzwoniono</span></div>
+      <div class="card"><b>{{ stats.by_status.get('przemysli', 0) }}</b><span>przemyśli</span></div>
+      <div class="card"><b>{{ stats.by_status.get('sprawdzi', 0) }}</b><span>sprawdzi</span></div>
+      <div class="card bad"><b>{{ stats.lost }}</b><span>nie chce</span></div>
+      <div class="card ok"><b>{{ stats.won }}</b><span>skorzystał</span></div>
+      <div class="card"><b>{{ stats.conversion_pct }}%</b><span>konwersja (po kontakcie)</span></div>
       <div class="card"><b>{% if job.running %}RUN{% else %}IDLE{% endif %}</b><span>status bota</span></div>
     </div>
 
@@ -141,17 +184,22 @@
       </div>
       <button type="submit" {% if job.running %}disabled{% endif %}>Zbierz sprzedawców</button>
     </form>
+    <p class="hint">Najpewniej odpalaj bota u siebie: <code>python main.py --query "fraza"</code> — Captcha na hostingu często blokuje listing. Zapis i tak idzie do tej samej bazy.</p>
 
     <div class="row-actions">
-      {% if csv_exists %}
       <a class="btn" href="/download.csv">Pobierz CSV</a>
-      {% endif %}
       <a class="btn" href="/" style="background:#2a3542;color:var(--text)">Odśwież</a>
       {% if job.running %}
       <form method="post" action="/stop" style="display:inline;margin:0">
         <button type="submit" style="background:var(--bad);color:#fff">Stop (odblokuj)</button>
       </form>
       {% endif %}
+      <div class="filters">
+        <a class="{% if not filter_status %}on{% endif %}" href="/">Wszystkie</a>
+        {% for key, label in statuses %}
+        <a class="{% if filter_status == key %}on{% endif %}" href="/?status={{ key }}">{{ label }}</a>
+        {% endfor %}
+      </div>
     </div>
 
     <div class="status {% if job.running %}running{% endif %} {% if job.error %}err{% endif %}">
@@ -168,7 +216,7 @@
         zapisano {{ job.result.saved }},
         z telefonem {{ job.result.with_phone }}
       {% else %}
-        Bot bezczynny. Wpisz niszę i kliknij „Zbierz sprzedawców”.
+        Bot bezczynny. Leady z lokalnego runu pojawią się tutaj same.
       {% endif %}
       {% if job.log %}
       <div class="log">{{ job.log|join('\n') }}</div>
@@ -183,29 +231,75 @@
           <th>Telefon</th>
           <th>Email</th>
           <th>Firma</th>
-          <th>NIP</th>
-          <th>Oferta</th>
+          <th>Status</th>
+          <th>Notatka</th>
+          <th>Nisza</th>
         </tr>
       </thead>
       <tbody>
         {% for r in rows %}
-        <tr>
-          <td><a href="{{ r.seller_url }}" target="_blank" rel="noopener">{{ r.login }}</a></td>
+        <tr data-login="{{ r.login }}">
+          <td>
+            {% if r.seller_url %}
+            <a href="{{ r.seller_url }}" target="_blank" rel="noopener">{{ r.login }}</a>
+            {% else %}
+            {{ r.login }}
+            {% endif %}
+            {% if r.offer_url %}<div><a href="{{ r.offer_url }}" target="_blank" rel="noopener">oferta</a></div>{% endif %}
+          </td>
           <td class="phone">{{ r.phone or '—' }}</td>
           <td>{{ r.email or '—' }}</td>
-          <td>{{ r.company_name or '—' }}</td>
-          <td>{{ r.nip or '—' }}</td>
-          <td>{% if r.offer_url %}<a href="{{ r.offer_url }}" target="_blank" rel="noopener">oferta</a>{% else %}—{% endif %}</td>
+          <td>{{ r.company_name or '—' }}{% if r.nip %}<div class="query">NIP {{ r.nip }}</div>{% endif %}</td>
+          <td>
+            <select class="status-sel st-{{ r.status or 'nowy' }}" data-login="{{ r.login }}">
+              {% for key, label in statuses %}
+              <option value="{{ key }}" {% if (r.status or 'nowy') == key %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <input class="note" data-login="{{ r.login }}" value="{{ r.status_note or '' }}" placeholder="np. oddzwonić w piątek" />
+          </td>
+          <td class="query">{{ r.query or '—' }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
     {% else %}
-    <div class="empty">Brak leadów. Odpal scrapowanie albo wrzuć CSV do <code>data/sellers.csv</code>.</div>
+    <div class="empty">Brak leadów w bazie. Odpal scrapowanie lokalnie — zapiszą się tutaj.</div>
     {% endif %}
   </main>
   {% if job.running %}
   <script>setTimeout(function(){ location.reload(); }, 4000);</script>
   {% endif %}
+  <script>
+    function paint(sel) {
+      sel.className = "status-sel st-" + sel.value;
+    }
+    document.querySelectorAll("select.status-sel").forEach(function (sel) {
+      paint(sel);
+      sel.addEventListener("change", function () {
+        paint(sel);
+        fetch("/api/lead/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ login: sel.dataset.login, status: sel.value })
+        }).then(function (r) { if (!r.ok) alert("Nie zapisano statusu"); });
+      });
+    });
+    document.querySelectorAll("input.note").forEach(function (inp) {
+      var t = null;
+      inp.addEventListener("input", function () {
+        clearTimeout(t);
+        t = setTimeout(function () {
+          fetch("/api/lead/note", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ login: inp.dataset.login, note: inp.value })
+          });
+        }, 500);
+      });
+    });
+  </script>
 </body>
 </html>

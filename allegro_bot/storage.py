@@ -7,6 +7,11 @@ from pathlib import Path
 
 from allegro_bot.models import SellerLead
 
+try:
+    from allegro_bot import leads_db
+except Exception:  # pragma: no cover
+    leads_db = None  # type: ignore
+
 CSV_FIELDS = [
     "login",
     "company_name",
@@ -29,6 +34,9 @@ class Storage:
         if self.sqlite_path:
             self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
             self._init_db()
+        self._pg = bool(leads_db and leads_db.configured())
+        if self._pg:
+            leads_db.init_schema()
 
     def _init_db(self) -> None:
         assert self.sqlite_path
@@ -54,6 +62,11 @@ class Storage:
 
     def known_logins(self) -> set[str]:
         known: set[str] = set()
+        if self._pg:
+            try:
+                known |= leads_db.known_logins()
+            except Exception as e:
+                print(f"[!] PostgreSQL known_logins: {e}", flush=True)
         if self.csv_path.exists():
             with self.csv_path.open("r", encoding="utf-8-sig", newline="") as f:
                 for row in csv.DictReader(f):
@@ -75,41 +88,47 @@ class Storage:
                 w.writeheader()
             w.writerow({k: getattr(lead, k) for k in CSV_FIELDS})
 
-        if not self.sqlite_path:
-            return
-        with sqlite3.connect(self.sqlite_path) as conn:
-            conn.execute(
-                """
-                INSERT INTO sellers (
-                    login, company_name, phone, email, nip, address,
-                    seller_url, offer_url, query, raw_note, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(login) DO UPDATE SET
-                    company_name=excluded.company_name,
-                    phone=COALESCE(excluded.phone, sellers.phone),
-                    email=COALESCE(excluded.email, sellers.email),
-                    nip=COALESCE(excluded.nip, sellers.nip),
-                    address=COALESCE(excluded.address, sellers.address),
-                    seller_url=COALESCE(excluded.seller_url, sellers.seller_url),
-                    offer_url=COALESCE(excluded.offer_url, sellers.offer_url),
-                    query=excluded.query,
-                    raw_note=excluded.raw_note,
-                    updated_at=CURRENT_TIMESTAMP
-                """,
-                (
-                    lead.login,
-                    lead.company_name,
-                    lead.phone,
-                    lead.email,
-                    lead.nip,
-                    lead.address,
-                    lead.seller_url,
-                    lead.offer_url,
-                    lead.query,
-                    lead.raw_note,
-                ),
-            )
-            conn.commit()
+        if self.sqlite_path:
+            with sqlite3.connect(self.sqlite_path) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO sellers (
+                        login, company_name, phone, email, nip, address,
+                        seller_url, offer_url, query, raw_note, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(login) DO UPDATE SET
+                        company_name=excluded.company_name,
+                        phone=COALESCE(excluded.phone, sellers.phone),
+                        email=COALESCE(excluded.email, sellers.email),
+                        nip=COALESCE(excluded.nip, sellers.nip),
+                        address=COALESCE(excluded.address, sellers.address),
+                        seller_url=COALESCE(excluded.seller_url, sellers.seller_url),
+                        offer_url=COALESCE(excluded.offer_url, sellers.offer_url),
+                        query=excluded.query,
+                        raw_note=excluded.raw_note,
+                        updated_at=CURRENT_TIMESTAMP
+                    """,
+                    (
+                        lead.login,
+                        lead.company_name,
+                        lead.phone,
+                        lead.email,
+                        lead.nip,
+                        lead.address,
+                        lead.seller_url,
+                        lead.offer_url,
+                        lead.query,
+                        lead.raw_note,
+                    ),
+                )
+                conn.commit()
+
+        if self._pg:
+            try:
+                leads_db.upsert_lead(lead)
+            except Exception as e:
+                print(f"[!] PostgreSQL save {lead.login}: {e}", flush=True)
+                raise
 
     def save_state(self, path: Path, payload: dict) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
