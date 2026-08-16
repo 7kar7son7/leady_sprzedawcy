@@ -1,9 +1,27 @@
 # Allegro bot – konfiguracja pod hosting / Docker
 query: ""
+queries:
+  - kosmetyki
+  - kosmetyki naturalne
+  - pielęgnacja twarzy
+  - perfumy
+  - meble ogrodowe
+  - narzędzia
+  - wiertarka
+  - zabawki
+
+# Lokalnie: python main.py --loop  (nie wyłącza się sam)
 max_pages: 3
-max_sellers: 100
-delay_min_sec: 1.5
-delay_max_sec: 3.5
+max_sellers: 12
+delay_min_sec: 4
+delay_max_sec: 12
+batch_every: 7
+pause_between_queries_min: 90
+pause_between_queries_max: 240
+pause_after_batch_min: 40
+pause_after_batch_max: 120
+pause_between_rounds_min: 420
+pause_between_rounds_max: 900
 
 # Na VPS/Docker ZAWSZE true (brak X11 / $DISPLAY)
 headless: true

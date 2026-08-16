@@ -26,8 +26,13 @@ class AllegroSellerBot:
         self.delay_max = delay_max
         self.max_sellers = max_sellers
 
-    async def pause(self) -> None:
-        await asyncio.sleep(random.uniform(self.delay_min, self.delay_max))
+    async def pause(self, lo: float | None = None, hi: float | None = None) -> None:
+        a = self.delay_min if lo is None else lo
+        b = self.delay_max if hi is None else hi
+        sec = random.uniform(min(a, b), max(a, b))
+        if random.random() < 0.12:
+            sec += random.uniform(8, 22)
+        await asyncio.sleep(sec)
 
     def listing_url(self, query: str, page_no: int = 1) -> str:
         q = quote_plus(query.strip())
@@ -109,7 +114,7 @@ class AllegroSellerBot:
             log(f"[+] Listing strona {page_no}: +{added} sprzedawców (łącznie {len(found)})")
             if added == 0:
                 log("[!] Brak sprzedawców w StoreState – Captcha albo zmiana HTML.")
-            await self.pause()
+            await self.pause(self.delay_min * 2, self.delay_max * 3)
 
         return found
 
@@ -136,7 +141,7 @@ class AllegroSellerBot:
 
         await page.goto(target, wait_until="domcontentloaded", timeout=60_000)
         await dismiss_cookie_banner(page)
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(int(random.uniform(1400, 3800)))
 
         # przewiń / kliknij kotwicę o sprzedającym (dane często już są w HTML)
         try:

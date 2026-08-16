@@ -142,13 +142,44 @@ def upsert_lead(lead: SellerLead) -> None:
         conn.commit()
 
 
-def list_leads(status: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
+PHONE_SQL = "NULLIF(TRIM(COALESCE(phone, '')), '') IS NOT NULL"
+EMAIL_SQL = "NULLIF(TRIM(COALESCE(email, '')), '') IS NOT NULL"
+
+CONTACT_FILTERS = [
+    ("", "Wszystkie"),
+    ("phone", "Z telefonem"),
+    ("email", "Z e-mailem"),
+    ("both", "Tel + e-mail"),
+    ("none", "Bez kontaktu"),
+]
+CONTACT_KEYS = {k for k, _ in CONTACT_FILTERS if k}
+
+
+def _contact_clause(contact: str | None) -> str:
+    if contact == "phone":
+        return f" AND {PHONE_SQL}"
+    if contact == "email":
+        return f" AND {EMAIL_SQL}"
+    if contact == "both":
+        return f" AND {PHONE_SQL} AND {EMAIL_SQL}"
+    if contact == "none":
+        return f" AND NOT {PHONE_SQL} AND NOT {EMAIL_SQL}"
+    return ""
+
+
+def list_leads(
+    status: str | None = None,
+    contact: str | None = None,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
     init_schema()
-    sql = f"SELECT * FROM {TABLE}"
+    sql = f"SELECT * FROM {TABLE} WHERE 1=1"
     params: dict[str, Any] = {"limit": limit}
     if status and status in STATUS_KEYS:
-        sql += " WHERE status = %(status)s"
+        sql += " AND status = %(status)s"
         params["status"] = status
+    if contact in CONTACT_KEYS:
+        sql += _contact_clause(contact)
     sql += " ORDER BY created_at DESC LIMIT %(limit)s"
     with connection() as conn:
         with conn.cursor() as cur:

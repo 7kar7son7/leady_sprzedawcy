@@ -39,6 +39,7 @@ SESSION_SECRET = (os.environ.get("SESSION_SECRET") or "").strip() or secrets.tok
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 templates.env.globals["status_labels"] = STATUS_LABELS
 templates.env.globals["statuses"] = STATUSES
+templates.env.globals["contact_filters"] = leads_db.CONTACT_FILTERS
 
 app = FastAPI(title="Allegro Seller Leads")
 
@@ -359,8 +360,20 @@ async def logout(request: Request):
     return RedirectResponse("/login", status_code=303)
 
 
+def filter_qs(status: str = "", contact: str = "") -> str:
+    parts: list[str] = []
+    if status:
+        parts.append(f"status={status}")
+    if contact:
+        parts.append(f"contact={contact}")
+    return ("/?" + "&".join(parts)) if parts else "/"
+
+
+templates.env.globals["filter_qs"] = filter_qs
+
+
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request, status: str = "") -> HTMLResponse:
+async def index(request: Request, status: str = "", contact: str = "") -> HTMLResponse:
     clear_stuck_job_if_needed()
     db_error = None
     rows: list[dict] = []
@@ -374,10 +387,15 @@ async def index(request: Request, status: str = "") -> HTMLResponse:
         "lost": 0,
         "conversion_pct": 0,
     }
+    contact = contact if contact in leads_db.CONTACT_KEYS else ""
     if leads_db.configured():
         try:
             stats = leads_db.stats()
-            rows = leads_db.list_leads(status=status or None, limit=500)
+            rows = leads_db.list_leads(
+                status=status or None,
+                contact=contact or None,
+                limit=500,
+            )
         except Exception as e:
             db_error = str(e)
     else:
@@ -394,6 +412,7 @@ async def index(request: Request, status: str = "") -> HTMLResponse:
             "job_age_sec": int(age) if age is not None else None,
             "default_query": (cfg.get("query") or "").strip(),
             "filter_status": status,
+            "filter_contact": contact,
             "db_error": db_error,
             "user": request.session.get("user"),
         },
@@ -449,10 +468,15 @@ async def api_lead_note(request: Request) -> JSONResponse:
 
 
 @app.get("/download.csv")
-async def download_csv():
+async def download_csv(status: str = "", contact: str = ""):
     if not leads_db.configured():
         return HTMLResponse("Brak bazy.", status_code=404)
-    rows = leads_db.list_leads(limit=50_000)
+    contact = contact if contact in leads_db.CONTACT_KEYS else ""
+    rows = leads_db.list_leads(
+        status=status or None,
+        contact=contact or None,
+        limit=50_000,
+    )
     fields = [
         "login",
         "company_name",
